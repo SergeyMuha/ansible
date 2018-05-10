@@ -1,0 +1,77 @@
+---
+- hosts: server
+  vars:
+    http_port: 80
+    max_clients: 200
+  remote_user: ubuntu
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  tasks:
+  - name: Install services 16.04
+    apt: name={{ item }} update_cache=yes state=latest
+    with_items:
+    - apache2 
+    - php
+    - mysql-server
+    - debconf-utils
+    - php-mysql
+    - libapache2-mod-php7.0
+    - python-mysqldb
+    - python3-mysqldb
+    when: (ansible_distribution == "Ubuntu" and ansible_distribution_version == "16.04")
+  - name: Install services 14.04
+    apt: name={{ item }} update_cache=yes state=latest
+    with_items:
+    - apache2
+    - php5
+    - mysql-server
+    - debconf-utils
+    - php5-mysql
+    - libapache2-mod-php5
+    - python-mysqldb
+    when: (ansible_distribution == "Ubuntu" and ansible_distribution_version == "14.04")
+  - name: Set hostname variable
+    shell: "a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && echo $a"
+  - name: Creates directory
+    file: path=/var/www/html/wordpress state=directory
+  - copy:
+      src: /etc/apache2/sites-available/000-default.conf
+      dest: /etc/apache2/sites-available/wordpress.conf
+      remote_src: yes
+  - replace:
+      path: /etc/apache2/sites-available/wordpress.conf
+      regexp: 'DocumentRoot \/var\/www\/html'
+      replace: 'DocumentRoot /var/www/html/wordpress'
+      backup: yes
+  - name: Create a new database with name 'wordpress'
+    mysql_db:
+      name: wordpress
+      state: present
+  - mysql_user:
+      name: wordpress
+      password: qwerty
+      priv: '*.*:ALL,GRANT'
+      state: present
+  - command: "{{ item }}"
+    with_items:
+    - debconf-set-selections <<< "mysql-server mysql-server/root_password password qwerty"
+    - debconf-set-selections <<< "mysql-server mysql-server/root_password_again password qwerty"
+    - curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    - chmod +x wp-cli.phar
+    - mv wp-cli.phar /usr/local/bin/wp
+    - wp core download --allow-root --path=/var/www/html/wordpress
+    - wp core config --dbname=wordpress --dbuser=wordpress --dbpass=qwerty --allow-root --path=/var/www/html/wordpress
+    - a2dissite 000-default.conf
+    - a2ensite wordpress.conf
+    - service apache2 reload
+    - chown -R www-data:www-data /var/www
+    - service apache2 restart
+    ignore_errors: yes
+  - name: Install WP
+    shell: 'a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && wp core install --url="$a" --title="Blog Title" --admin_user="admin" --admin_password="wordpress" --admin_email="email@domain.com" --allow-root --path=/var/www/html/wordpress '
+  - name: Restart service httpd, in all cases
+    service:
+      name: apache2
+      state: restarted
+  become: yes
+  become_user: root
