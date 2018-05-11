@@ -13,9 +13,11 @@ $ git clone https://github.com/SergeyMuha/ansible.git
 $ cd ansible/  
 
 $./boot_aws_vm.sh  
+
 usage: boot_aws_vm.sh amis aws-key-name  
 amis : ami-38708b45 - ubuntu 14.04, ami-a0d009dd - ubuntu 16.04, ami-467ca739 - amazon  
 You could check your aws-key-name with  
+
 $ aws ec2 describe-key-pairs  
 
 Script will create one aws instance from selected AMI and update /etc/ansible/hosts file with new hosts group and print public-dns-name  
@@ -23,6 +25,7 @@ Script will create one aws instance from selected AMI and update /etc/ansible/ho
 $./boot_aws_vm.sh ami-38708b45 your-aws-key  
 
 For deploy Wordpress on this instance run  
+
 $ ansible-playbook wp_setup.yaml  
 
 Open public-dns-name to check site  

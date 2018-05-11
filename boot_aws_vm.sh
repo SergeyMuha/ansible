@@ -1,5 +1,6 @@
 #! /bin/bash
 if [ -z "$1" ]; then 
+	echo " "
 	echo usage: boot_aws_vm.sh amis aws-key-name
 	echo amis : ami-38708b45 - ubuntu 14.04, ami-a0d009dd - ubuntu 16.04, ami-467ca739 - amazon
         echo You could check your aws-key-name with $ aws ec2 describe-key-pairs
