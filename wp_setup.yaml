@@ -1,0 +1,172 @@
+---
+- hosts: server-apt
+  vars:
+    http_port: 80
+    max_clients: 200
+  remote_user: ubuntu
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  tasks:
+  - name: Install services 16.04
+    apt: name={{ item }} update_cache=yes state=latest
+    with_items:
+    - apache2 
+    - php
+    - mysql-server
+    - debconf-utils
+    - php-mysql
+    - libapache2-mod-php7.0
+    - python-mysqldb
+    - python3-mysqldb
+    when: (ansible_distribution == "Ubuntu" and ansible_distribution_version == "16.04")
+  - name: Install services 14.04
+    apt: name={{ item }} update_cache=yes state=latest
+    with_items:
+    - apache2
+    - php5
+    - mysql-server
+    - debconf-utils
+    - php5-mysql
+    - libapache2-mod-php5
+    - python-mysqldb
+    when: (ansible_distribution == "Ubuntu" and ansible_distribution_version == "14.04")
+  - name: Set hostname variable
+    shell: "a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && echo $a"
+    when: (ansible_distribution == "Ubuntu")
+  - name: Creates directory
+    file: path=/var/www/html/wordpress state=directory
+    when: (ansible_distribution == "Ubuntu")
+  - copy:
+      src: /etc/apache2/sites-available/000-default.conf
+      dest: /etc/apache2/sites-available/wordpress.conf
+      remote_src: yes
+    when: (ansible_distribution == "Ubuntu")
+  - replace:
+      path: /etc/apache2/sites-available/wordpress.conf
+      regexp: 'DocumentRoot \/var\/www\/html'
+      replace: 'DocumentRoot /var/www/html/wordpress'
+      backup: yes
+    when: (ansible_distribution == "Ubuntu")
+  - name: Create a new database with name 'wordpress'
+    mysql_db:
+      name: wordpress
+      state: present
+    when: (ansible_distribution == "Ubuntu")
+  - mysql_user:
+      name: wordpress
+      password: qwerty
+      priv: '*.*:ALL,GRANT'
+      state: present
+    when: (ansible_distribution == "Ubuntu")
+  - command: "{{ item }}"
+    with_items:
+    - debconf-set-selections <<< "mysql-server mysql-server/root_password password qwerty"
+    - debconf-set-selections <<< "mysql-server mysql-server/root_password_again password qwerty"
+    - curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    - chmod +x wp-cli.phar
+    - mv wp-cli.phar /usr/local/bin/wp
+    - wp core download --allow-root --path=/var/www/html/wordpress
+    - wp core config --dbname=wordpress --dbuser=wordpress --dbpass=qwerty --allow-root --path=/var/www/html/wordpress
+    - a2dissite 000-default.conf
+    - a2ensite wordpress.conf
+    - service apache2 reload
+    - chown -R www-data:www-data /var/www
+    - service apache2 restart
+    when: (ansible_distribution == "Ubuntu")
+    ignore_errors: yes
+  - name: Install WP
+    shell: 'a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && wp core install --url="$a" --title="Blog Title" --admin_user="admin" --admin_password="wordpress" --admin_email="email@domain.com" --allow-root --path=/var/www/html/wordpress '
+  - name: Restart service httpd, in all cases
+    service:
+      name: apache2
+      state: restarted
+    when: (ansible_distribution == "Ubuntu") 
+  become: yes
+  ignore_errors: yes
+
+- hosts: server-yum 
+  vars:
+    http_port: 80
+    max_clients: 200
+  remote_user: ec2-user
+  #when: (ansible_distribution == "Amazon")
+  tasks:
+  - name: Add repository
+    yum_repository:
+      name: epel
+      description: EPEL YUM repo
+      baseurl: http://dl.fedoraproject.org/pub/epel/7/x86_64/
+    when: (ansible_distribution == "Amazon")
+  - name: Install services for other OS
+    package: name={{ item }} state=latest
+    with_items:
+    - httpd
+    - php
+    - mysql-server
+    - php-mysql
+    - mysql-devel
+    - gcc
+    #- MySQL-python
+    when: (ansible_distribution == "Amazon")
+  - name: "Turn on Apache and MySQL"
+    service: name={{item}} state=started enabled=yes
+    with_items:
+      - mysqld
+      - httpd
+    when: (ansible_distribution == "Amazon")
+    become: yes
+  - name: python Mysql
+    pip:
+      name: MySQL-python
+    when: (ansible_distribution == "Amazon")
+    become: yes
+  - name: Set hostname variable
+    shell: "a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && echo $a"
+    when: (ansible_distribution == "Amazon")
+  - name: Creates directory
+    file: path=/var/www/html/wordpress state=directory
+    when: (ansible_distribution == "Amazon")
+  - replace:
+      path: /etc/httpd/conf/httpd.conf
+      regexp: 'DocumentRoot "\/var\/www\/html"'
+      replace: 'DocumentRoot "/var/www/html/wordpress"'
+      backup: yes
+    when: (ansible_distribution == "Amazon")
+  - name: Create a new database with name 'wordpress'
+    mysql_db:
+      name: wordpress
+      state: present
+    when: (ansible_distribution == "Amazon")
+    become: yes
+  - mysql_user:
+      name: wordpress
+      password: qwerty
+      priv: '*.*:ALL,GRANT'
+      state: present
+    when: (ansible_distribution == "Amazon")
+    become: yes
+  - command: "{{ item }}"
+    with_items:
+    - curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+    - chmod +x wp-cli.phar
+    - mv wp-cli.phar /usr/local/bin/wp
+    - /usr/local/bin/wp core download --allow-root --path=/var/www/html/wordpress
+    - /usr/local/bin/wp core config --dbname=wordpress --dbuser=wordpress --dbpass=qwerty --allow-root --path=/var/www/html/wordpress
+    - service httpd reload
+    - chown -R apache:apache /var/www
+    - service httpd restart
+    ignore_errors: yes
+    when: (ansible_distribution == "Amazon")
+    become: yes
+    become_user: root
+  - name: Install WP
+    shell: 'a=$(curl -s http://169.254.169.254/latest/meta-data/public-hostname) && /usr/local/bin/wp core install --url="$a" --title="Blog Title" --admin_user="admin" --admin_password="wordpress" --admin_email="email@domain.com" --allow-root --path=/var/www/html/wordpress '
+    when: (ansible_distribution == "Amazon")
+  - name: Restart service httpd, in all cases
+    service:
+      name: httpd
+      state: restarted
+    when: (ansible_distribution == "Amazon")
+    become: yes
+  become: yes
+  #become_user: root
